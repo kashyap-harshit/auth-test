@@ -2,6 +2,7 @@ import { connectToDb } from "@/db/connectToDb";
 import User from "@/models/user";
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcrypt"
+import jwt, { Secret, SignOptions } from "jsonwebtoken"
 
 export async function POST(request: NextRequest){
     try{
@@ -13,7 +14,9 @@ export async function POST(request: NextRequest){
         }
         console.log("received data: ", {username, email, password})
         const existingUser = await User.findOne({email})
-        console.log(existingUser)
+        if(existingUser){
+            return NextResponse.json({message: "user already exists with this email"}, {status: 400})
+        }
         const hashedPass = await bcrypt.hash(password, 10)
         console.log(hashedPass)
         const user = await User.create({
@@ -21,10 +24,19 @@ export async function POST(request: NextRequest){
             email,
             password: hashedPass
         })
-        console.log("user is created : ", user)
-        return NextResponse.json({message: "success"}, {status: 200})
-
-    }catch(e: any){
-        return NextResponse.json({message: "error "+e.message}, {status: 500})
+        if(!user){
+            return NextResponse.json({message: "could not create user"}, {status: 500})
+        }
+        const token = jwt.sign(
+            {_id: user._id},
+            process.env.JWT_SECRET! as Secret,
+            {expiresIn: process.env.JWT_EXPIRES_IN as SignOptions['expiresIn']}
+        )
+        
+        const responses = NextResponse.json({message: "user created successfully", user: {_id: user._id, email: user.email, username: user.username}}, {status: 201})
+        responses.cookies.set("token", token,{httpOnly: true})
+        return responses;
+    }catch(e){
+        return NextResponse.json({message: "error "+e}, {status: 500})
     }
 }
